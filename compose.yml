@@ -63,6 +63,9 @@ services:
     env_file:
       - path: ./frontend/.env
         required: false
+    # NEXT_PUBLIC_API_URL is injectable at runtime via docker-entrypoint.sh.
+    # The entrypoint replaces the build-time placeholder in the JS bundle
+    # with this value before starting the server.
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-auto}
       NEXT_PUBLIC_AUTH_MODE: ${AUTH_MODE}

@@ -20,7 +20,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Literal
 
 from fastapi import Depends, Header, HTTPException, Request, status
-from sqlmodel import col, select
+from sqlmodel import select
 
 from app.core.agent_tokens import verify_agent_token
 from app.core.client_ip import get_client_ip
@@ -49,14 +49,12 @@ class AgentAuthContext:
 
 
 async def _find_agent_for_token(session: AsyncSession, token: str) -> Agent | None:
-    agents = list(
-        await session.exec(
-            select(Agent).where(col(Agent.agent_token_hash).is_not(None)),
-        ),
-    )
-    for agent in agents:
-        if agent.agent_token_hash and verify_agent_token(token, agent.agent_token_hash):
-            return agent
+    prefix = token[:8]
+    agent = (await session.exec(select(Agent).where(Agent.token_prefix == prefix))).first()
+    if agent is None:
+        return None
+    if agent.agent_token_hash and verify_agent_token(token, agent.agent_token_hash):
+        return agent
     return None
 
 

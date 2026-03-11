@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -11,6 +12,17 @@ from sqlmodel import Field
 
 from app.core.time import utcnow
 from app.models.base import QueryModel
+
+
+class AgentStatus(str, Enum):
+    """Lifecycle status values for an agent."""
+
+    online = "online"
+    offline = "offline"
+    updating = "updating"
+    deleting = "deleting"
+    provisioning = "provisioning"
+
 
 RUNTIME_ANNOTATION_TYPES = (datetime,)
 
@@ -27,6 +39,7 @@ class Agent(QueryModel, table=True):
     status: str = Field(default="provisioning", index=True)
     openclaw_session_id: str | None = Field(default=None, index=True)
     agent_token_hash: str | None = Field(default=None, index=True)
+    token_prefix: str | None = Field(default=None, max_length=8, index=True)
     heartbeat_config: dict[str, Any] | None = Field(
         default=None,
         sa_column=Column(JSON),

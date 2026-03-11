@@ -1,6 +1,6 @@
 import type { FormEvent } from "react";
 
-import type { GatewayCheckStatus } from "@/lib/gateway-form";
+import { isLocalGatewayUrl, type GatewayCheckStatus } from "@/lib/gateway-form";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -92,6 +92,12 @@ export function GatewayForm({
             <p className="text-xs text-red-500">{gatewayUrlError}</p>
           ) : gatewayCheckStatus === "error" && gatewayCheckMessage ? (
             <p className="text-xs text-red-500">{gatewayCheckMessage}</p>
+          ) : null}
+          {!gatewayUrlError && isLocalGatewayUrl(gatewayUrl) ? (
+            <p className="text-xs text-amber-600">
+              This URL points to a local address. It may not be reachable from
+              remote agents.
+            </p>
           ) : null}
         </div>
         <div className="space-y-2">

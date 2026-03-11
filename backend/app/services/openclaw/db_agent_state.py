@@ -18,10 +18,11 @@ def ensure_heartbeat_config(agent: Agent) -> None:
 
 
 def mint_agent_token(agent: Agent) -> str:
-    """Generate a new raw token and update the agent's token hash."""
+    """Generate a new raw token and update the agent's token hash and prefix."""
 
     raw_token = generate_agent_token()
     agent.agent_token_hash = hash_agent_token(raw_token)
+    agent.token_prefix = raw_token[:8]
     return raw_token
 
 

@@ -12,8 +12,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . ./
 
-# Allows configuring the API URL at build time.
-ARG NEXT_PUBLIC_API_URL=auto
+# Bake a placeholder into the JS bundle so docker-entrypoint.sh can swap it at
+# runtime with the real NEXT_PUBLIC_API_URL value via sed.
+ARG NEXT_PUBLIC_API_URL=__NEXT_PUBLIC_API_URL__
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ARG NEXT_PUBLIC_AUTH_MODE
 ENV NEXT_PUBLIC_AUTH_MODE=${NEXT_PUBLIC_AUTH_MODE}
@@ -42,9 +43,12 @@ COPY --from=builder --chown=appuser:appgroup /app/.next ./.next
 COPY --from=builder --chown=appuser:appgroup /app/package.json ./package.json
 COPY --from=builder --chown=appuser:appgroup /app/node_modules ./node_modules
 COPY --from=builder --chown=appuser:appgroup /app/next.config.ts ./next.config.ts
+COPY --chown=appuser:appgroup docker-entrypoint.sh ./docker-entrypoint.sh
+RUN chmod +x ./docker-entrypoint.sh
 
 USER appuser
 
 EXPOSE 3000
 
-CMD ["npm", "run", "start"]
+ENTRYPOINT ["./docker-entrypoint.sh"]
+CMD []

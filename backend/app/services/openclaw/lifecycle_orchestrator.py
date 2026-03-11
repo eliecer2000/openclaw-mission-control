@@ -12,6 +12,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlmodel import col, select
 
+from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.models.agents import Agent
 from app.models.boards import Board
@@ -30,6 +31,8 @@ from app.services.openclaw.lifecycle_queue import (
 )
 from app.services.openclaw.provisioning import OpenClawGatewayProvisioner
 from app.services.organizations import get_org_owner_user
+
+logger = get_logger(__name__)
 
 if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
@@ -155,7 +158,7 @@ class AgentLifecycleOrchestrator(OpenClawDBService):
         await self.session.commit()
         await self.session.refresh(locked)
         if wake and locked.checkin_deadline_at is not None:
-            enqueue_lifecycle_reconcile(
+            queued = enqueue_lifecycle_reconcile(
                 QueuedAgentLifecycleReconcile(
                     agent_id=locked.id,
                     gateway_id=locked.gateway_id,
@@ -164,4 +167,10 @@ class AgentLifecycleOrchestrator(OpenClawDBService):
                     checkin_deadline_at=locked.checkin_deadline_at,
                 )
             )
+            if not queued:
+                logger.warning(
+                    "lifecycle.reconcile.not_queued agent_id=%s "
+                    "agent may not be reconciled automatically",
+                    str(locked.id),
+                )
         return locked

@@ -142,6 +142,12 @@ def enqueue_task(
             },
         )
         return True
+    except redis.exceptions.ConnectionError as exc:
+        logger.warning(
+            "rq.queue.enqueue_failed.connection_error",
+            extra={"task_type": task.task_type, "queue_name": queue_name, "error": str(exc)},
+        )
+        return False
     except Exception as exc:
         logger.warning(
             "rq.queue.enqueue_failed",
@@ -163,6 +169,17 @@ def enqueue_task_with_delay(
         return enqueue_task(task, queue_name, redis_url=redis_url)
     try:
         return _schedule_for_later(task, queue_name, delay, redis_url=redis_url)
+    except redis.exceptions.ConnectionError as exc:
+        logger.warning(
+            "rq.queue.schedule_failed.connection_error",
+            extra={
+                "task_type": task.task_type,
+                "queue_name": queue_name,
+                "delay_seconds": delay,
+                "error": str(exc),
+            },
+        )
+        return False
     except Exception as exc:
         logger.warning(
             "rq.queue.schedule_failed",

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeVar
@@ -22,11 +23,11 @@ from sqlmodel import col, select
 from sse_starlette.sse import EventSourceResponse
 
 from app.core.agent_tokens import verify_agent_token
+from app.core.config import settings
 from app.core.logging import TRACE_LEVEL
 from app.core.time import utcnow
 from app.db import crud
 from app.db.pagination import paginate
-from app.db.session import async_session_maker
 from app.models.activity_events import ActivityEvent
 from app.models.agents import Agent
 from app.models.approvals import Approval
@@ -46,14 +47,8 @@ from app.schemas.agents import (
 from app.schemas.common import OkResponse
 from app.schemas.gateways import GatewayTemplatesSyncError, GatewayTemplatesSyncResult
 from app.services.activity_log import record_activity
-from app.services.openclaw.constants import (
-    _TOOLS_KV_RE,
-    DEFAULT_HEARTBEAT_CONFIG,
-    OFFLINE_AFTER,
-)
-from app.services.openclaw.db_agent_state import (
-    mint_agent_token,
-)
+from app.services.openclaw.constants import _TOOLS_KV_RE, DEFAULT_HEARTBEAT_CONFIG, OFFLINE_AFTER
+from app.services.openclaw.db_agent_state import mint_agent_token
 from app.services.openclaw.db_service import OpenClawDBService
 from app.services.openclaw.gateway_resolver import (
     gateway_client_config,
@@ -61,11 +56,7 @@ from app.services.openclaw.gateway_resolver import (
     require_gateway_for_board,
 )
 from app.services.openclaw.gateway_rpc import GatewayConfig as GatewayClientConfig
-from app.services.openclaw.gateway_rpc import (
-    OpenClawGatewayError,
-    ensure_session,
-    send_message,
-)
+from app.services.openclaw.gateway_rpc import OpenClawGatewayError, ensure_session, send_message
 from app.services.openclaw.internal.agent_key import agent_key as _agent_key
 from app.services.openclaw.internal.retry import GatewayBackoff
 from app.services.openclaw.internal.session_keys import (
@@ -101,6 +92,21 @@ if TYPE_CHECKING:
 
 
 _T = TypeVar("_T")
+
+# Global registry of active SSE queues keyed by board_id (None = all boards)
+_sse_queues: dict[UUID | None, list[asyncio.Queue[dict[str, object]]]] = defaultdict(list)
+
+
+def _notify_sse_queues(board_id: UUID | None, payload: dict[str, object]) -> None:
+    """Push a payload to all active SSE queues for the given board_id.
+
+    Uses put_nowait so slow clients drop events rather than blocking the server.
+    """
+    for queue in list(_sse_queues.get(board_id, [])):
+        try:
+            queue.put_nowait(payload)
+        except asyncio.QueueFull:
+            pass  # backpressure: slow client drops this event
 
 
 @dataclass(frozen=True)
@@ -1444,6 +1450,7 @@ class AgentLifecycleService(OpenClawDBService):
         self.session.add(agent)
         await self.session.commit()
         await self.session.refresh(agent)
+        _notify_sse_queues(agent.board_id, self.serialize_agent(agent))
         return self.to_agent_read(self.with_computed_status(agent))
 
     async def list_agents(
@@ -1506,37 +1513,31 @@ class AgentLifecycleService(OpenClawDBService):
         since: str | None,
         ctx: OrganizationContext,
     ) -> EventSourceResponse:
-        since_dt = self.parse_since(since) or utcnow()
-        last_seen = since_dt
+        self.parse_since(since)  # validate; value unused after SSE queue refactor
         board_ids = await list_accessible_board_ids(self.session, member=ctx.member, write=False)
         allowed_ids = set(board_ids)
         if board_id is not None:
             OpenClawAuthorizationPolicy.require_board_write_access(allowed=board_id in allowed_ids)
 
+        queue: asyncio.Queue[dict[str, object]] = asyncio.Queue(maxsize=100)
+        _sse_queues[board_id].append(queue)
+
         async def event_generator() -> AsyncIterator[dict[str, str]]:
-            nonlocal last_seen
-            while True:
-                if await request.is_disconnected():
-                    break
-                async with async_session_maker() as stream_session:
-                    stream_service = AgentLifecycleService(stream_session)
-                    stream_service.logger = self.logger
-                    if board_id is not None:
-                        agents = await stream_service.fetch_agent_events(
-                            board_id,
-                            last_seen,
+            try:
+                while not await request.is_disconnected():
+                    try:
+                        event = await asyncio.wait_for(
+                            queue.get(),
+                            timeout=settings.sse_poll_interval_seconds,
                         )
-                    elif allowed_ids:
-                        agents = await stream_service.fetch_agent_events(None, last_seen)
-                        agents = [agent for agent in agents if agent.board_id in allowed_ids]
-                    else:
-                        agents = []
-                for agent in agents:
-                    updated_at = agent.updated_at or agent.last_seen_at or utcnow()
-                    last_seen = max(updated_at, last_seen)
-                    payload = {"agent": self.serialize_agent(agent)}
-                    yield {"event": "agent", "data": json.dumps(payload)}
-                await asyncio.sleep(2)
+                        yield {"event": "agent", "data": json.dumps(event)}
+                    except asyncio.TimeoutError:
+                        continue  # keep-alive: EventSourceResponse sends ping
+            finally:
+                try:
+                    _sse_queues[board_id].remove(queue)
+                except ValueError:
+                    pass
 
         return EventSourceResponse(event_generator(), ping=15)
 

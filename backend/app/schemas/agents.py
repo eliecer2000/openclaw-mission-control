@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
@@ -11,7 +12,10 @@ from pydantic import Field, field_validator
 from sqlmodel import SQLModel
 from sqlmodel._compat import SQLModelConfig
 
+from app.models.agents import AgentStatus
 from app.schemas.common import NonEmptyStr
+
+_HEARTBEAT_EVERY_RE = re.compile(r"^[1-9][0-9]*[smh]$")
 
 _RUNTIME_TYPE_REFERENCES = (datetime, UUID, NonEmptyStr)
 
@@ -76,8 +80,8 @@ class AgentBase(SQLModel):
         description="Human-readable agent display name.",
         examples=["Ops triage lead"],
     )
-    status: str = Field(
-        default="provisioning",
+    status: AgentStatus = Field(
+        default=AgentStatus.provisioning,
         description="Current lifecycle state used by coordinator logic.",
         examples=["provisioning", "active", "paused", "retired"],
     )
@@ -101,6 +105,19 @@ class AgentBase(SQLModel):
         description="Template representing deeper agent instructions.",
         examples=["When critical blockers appear, escalate in plain language."],
     )
+
+    @field_validator("heartbeat_config", mode="before")
+    @classmethod
+    def validate_heartbeat_config(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        every = value.get("every")
+        if every is not None and not _HEARTBEAT_EVERY_RE.match(str(every)):
+            raise ValueError(
+                "heartbeat_config.every must be a positive integer followed by s, m, or h "
+                "(e.g. '10m', '30s', '2h')"
+            )
+        return value
 
     @field_validator("identity_template", "soul_template", mode="before")
     @classmethod
@@ -263,7 +280,7 @@ class AgentHeartbeat(SQLModel):
         },
     )
 
-    status: str | None = Field(
+    status: AgentStatus | None = Field(
         default=None,
         description="Agent health status string.",
         examples=["healthy", "offline", "degraded"],

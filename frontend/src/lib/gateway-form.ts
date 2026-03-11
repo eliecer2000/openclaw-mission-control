@@ -2,6 +2,18 @@ import { gatewaysStatusApiV1GatewaysStatusGet } from "@/api/generated/gateways/g
 
 export const DEFAULT_WORKSPACE_ROOT = "~/.openclaw";
 
+const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1"]);
+
+export function isLocalGatewayUrl(urlString: string): boolean {
+  try {
+    const url = new URL(urlString.trim());
+    return LOCAL_HOSTNAMES.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+
 export type GatewayCheckStatus = "idle" | "checking" | "success" | "error";
 
 /**

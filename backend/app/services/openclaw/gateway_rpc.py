@@ -19,6 +19,7 @@ from uuid import uuid4
 import websockets
 from websockets.exceptions import WebSocketException
 
+from app.core.config import settings
 from app.core.logging import TRACE_LEVEL, get_logger
 from app.services.openclaw.device_identity import (
     build_device_auth_payload,
@@ -450,12 +451,16 @@ async def openclaw_call(
         config.allow_insecure_tls,
         config.disable_device_pairing,
     )
+    timeout = settings.gateway_rpc_timeout_seconds
     try:
-        payload = await _openclaw_call_once(
-            method,
-            params,
-            config=config,
-            gateway_url=gateway_url,
+        payload = await asyncio.wait_for(
+            _openclaw_call_once(
+                method,
+                params,
+                config=config,
+                gateway_url=gateway_url,
+            ),
+            timeout=timeout,
         )
         logger.debug(
             "gateway.rpc.call.success method=%s duration_ms=%s",
@@ -470,6 +475,16 @@ async def openclaw_call(
             int((perf_counter() - started_at) * 1000),
         )
         raise
+    except asyncio.TimeoutError as exc:
+        logger.error(
+            "gateway.rpc.call.timeout method=%s timeout_s=%s duration_ms=%s",
+            method,
+            timeout,
+            int((perf_counter() - started_at) * 1000),
+        )
+        raise OpenClawGatewayError(
+            f"Gateway RPC timeout after {timeout}s (method={method})"
+        ) from exc
     except (
         TimeoutError,
         ConnectionError,
@@ -494,10 +509,14 @@ async def openclaw_connect_metadata(*, config: GatewayConfig) -> object:
         "gateway.rpc.connect_metadata.start gateway_url=%s",
         _redacted_url_for_log(gateway_url),
     )
+    timeout = settings.gateway_rpc_timeout_seconds
     try:
-        metadata = await _openclaw_connect_metadata_once(
-            config=config,
-            gateway_url=gateway_url,
+        metadata = await asyncio.wait_for(
+            _openclaw_connect_metadata_once(
+                config=config,
+                gateway_url=gateway_url,
+            ),
+            timeout=timeout,
         )
         logger.debug(
             "gateway.rpc.connect_metadata.success duration_ms=%s",
@@ -510,6 +529,15 @@ async def openclaw_connect_metadata(*, config: GatewayConfig) -> object:
             int((perf_counter() - started_at) * 1000),
         )
         raise
+    except asyncio.TimeoutError as exc:
+        logger.error(
+            "gateway.rpc.connect_metadata.timeout timeout_s=%s duration_ms=%s",
+            timeout,
+            int((perf_counter() - started_at) * 1000),
+        )
+        raise OpenClawGatewayError(
+            f"Gateway RPC timeout after {timeout}s (method=connect_metadata)"
+        ) from exc
     except (
         TimeoutError,
         ConnectionError,

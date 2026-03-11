@@ -1,18 +1,25 @@
 export function getApiBaseUrl(): string {
   const raw = process.env.NEXT_PUBLIC_API_URL?.trim();
   if (raw && raw.toLowerCase() !== "auto") {
-    const normalized = raw.replace(/\/+$/, "");
-    if (!normalized) {
-      throw new Error("NEXT_PUBLIC_API_URL is invalid.");
-    }
-    return normalized;
+    return (
+      raw.replace(/\/+$/, "") ||
+      (() => {
+        throw new Error("NEXT_PUBLIC_API_URL is invalid.");
+      })()
+    );
   }
 
   if (typeof window !== "undefined") {
-    const protocol = window.location.protocol === "https:" ? "https" : "http";
+    const protocol = window.location.protocol; // "https:" or "http:"
     const host = window.location.hostname;
+    const port = window.location.port;
+    const isStandardPort =
+      (protocol === "https:" && (port === "443" || port === "")) ||
+      (protocol === "http:" && (port === "80" || port === ""));
     if (host) {
-      return `${protocol}://${host}:8000`;
+      return isStandardPort
+        ? `${protocol}//${host}`
+        : `${protocol}//${host}:${port}`;
     }
   }
 

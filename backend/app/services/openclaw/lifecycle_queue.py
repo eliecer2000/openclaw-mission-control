@@ -84,6 +84,11 @@ def enqueue_lifecycle_reconcile(payload: QueuedAgentLifecycleReconcile) -> bool:
                 "attempt": payload.attempts,
             },
         )
+    else:
+        logger.error(
+            "lifecycle.queue.enqueue_failed agent_id=%s reason=redis_unavailable_or_queue_error",
+            str(payload.agent_id),
+        )
     return ok
 
 

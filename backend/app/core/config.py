@@ -81,6 +81,19 @@ class Settings(BaseSettings):
     rq_dispatch_retry_base_seconds: float = 10.0
     rq_dispatch_retry_max_seconds: float = 120.0
 
+    # Internal URL for gateway-to-backend callbacks (optional).
+    # When set, overrides BASE_URL for internal communication (e.g. behind ALBs).
+    internal_base_url: str = ""
+
+    # Timeout for gateway RPC calls in seconds.
+    gateway_rpc_timeout_seconds: float = 30.0
+
+    # Interval in seconds for the agent offline check job.
+    agent_offline_check_interval_seconds: int = 60
+
+    # Interval in seconds for SSE polling.
+    sse_poll_interval_seconds: float = 2.0
+
     # OpenClaw gateway runtime compatibility
     gateway_min_version: str = "2026.02.9"
 
@@ -118,6 +131,13 @@ class Settings(BaseSettings):
                 "BASE_URL must be an absolute http(s) URL (e.g. http://localhost:8000).",
             )
         self.base_url = base_url.rstrip("/")
+
+        internal_base_url = self.internal_base_url.strip()
+        if internal_base_url:
+            parsed = urlparse(internal_base_url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError("INTERNAL_BASE_URL must be an absolute http(s) URL when set.")
+            self.internal_base_url = internal_base_url.rstrip("/")
 
         # Rate-limit: fall back to rq_redis_url if using redis backend
         # with no explicit rate-limit URL. If both are blank, fail fast

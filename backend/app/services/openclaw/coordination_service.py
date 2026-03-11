@@ -93,7 +93,7 @@ class GatewayCoordinationService(AbstractGatewayMessagingService):
         reply_tags: list[str] | None,
         reply_source: str | None,
     ) -> str:
-        base_url = settings.base_url
+        base_url = settings.internal_base_url or settings.base_url
         header = "GATEWAY MAIN QUESTION" if kind == "question" else "GATEWAY MAIN HANDOFF"
         correlation = correlation_id.strip() if correlation_id else ""
         correlation_line = f"Correlation ID: {correlation}\n" if correlation else ""
@@ -440,7 +440,7 @@ class GatewayCoordinationService(AbstractGatewayMessagingService):
         tags = payload.reply_tags or ["gateway_main", "user_reply"]
         tags_json = json.dumps(tags)
         reply_source = payload.reply_source or "user_via_gateway_main"
-        base_url = settings.base_url
+        base_url = settings.internal_base_url or settings.base_url
         message = (
             "LEAD REQUEST: ASK USER\n"
             f"Board: {board.name}\n"

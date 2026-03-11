@@ -16,12 +16,13 @@ describe("getApiBaseUrl", () => {
   it("auto-resolves from browser host when set to auto", () => {
     vi.stubEnv("NEXT_PUBLIC_API_URL", "auto");
 
-    expect(getApiBaseUrl()).toBe("http://localhost:8000");
+    // jsdom uses port 3000 (non-standard for http), so it's included
+    expect(getApiBaseUrl()).toBe("http://localhost:3000");
   });
 
   it("auto-resolves from browser host when unset", () => {
     vi.stubEnv("NEXT_PUBLIC_API_URL", "");
 
-    expect(getApiBaseUrl()).toBe("http://localhost:8000");
+    expect(getApiBaseUrl()).toBe("http://localhost:3000");
   });
 });

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -9,6 +10,8 @@ from fastapi import APIRouter, FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi_pagination import add_pagination
+from sqlalchemy import update
+from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.api.activity import router as activity_router
 from app.api.agent import router as agent_router
@@ -37,8 +40,12 @@ from app.core.logging import configure_logging, get_logger
 from app.core.rate_limit import validate_rate_limit_redis
 from app.core.rate_limit_backend import RateLimitBackend
 from app.core.security_headers import SecurityHeadersMiddleware
-from app.db.session import init_db
+from app.core.time import utcnow
+from app.db.session import async_session_maker, init_db
+from app.models.agents import Agent
 from app.schemas.health import HealthStatusResponse
+from app.services.openclaw.constants import OFFLINE_AFTER
+from app.services.openclaw.provisioning_db import _notify_sse_queues
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -430,6 +437,32 @@ class MissionControlFastAPI(FastAPI):
         return _build_custom_openapi(self)
 
 
+async def _mark_agents_offline(session: AsyncSession) -> None:
+    """Mark agents as offline if they haven't sent a heartbeat within OFFLINE_AFTER."""
+    threshold = utcnow() - OFFLINE_AFTER
+    stmt = (
+        update(Agent)
+        .where(Agent.last_seen_at < threshold)
+        .where(Agent.status.not_in(["deleting", "updating", "offline"]))
+        .values(status="offline", updated_at=utcnow())
+    )
+    await session.execute(stmt)
+    await session.commit()
+    _notify_sse_queues(None, {"type": "offline_check"})
+
+
+async def _offline_check_loop() -> None:
+    """Periodically mark agents offline based on heartbeat timeout."""
+    interval = settings.agent_offline_check_interval_seconds
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            async with async_session_maker() as session:
+                await _mark_agents_offline(session)
+        except Exception:
+            logger.exception("app.offline_check.error")
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     """Initialize application resources before serving requests."""
@@ -444,6 +477,11 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         logger.info("app.lifecycle.rate_limit backend=redis")
     else:
         logger.info("app.lifecycle.rate_limit backend=memory")
+    # Run offline check once at startup to clear stale states
+    async with async_session_maker() as session:
+        await _mark_agents_offline(session)
+    # Launch periodic offline check loop
+    asyncio.create_task(_offline_check_loop())
     logger.info("app.lifecycle.started")
     try:
         yield
