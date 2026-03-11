@@ -872,8 +872,16 @@ class AgentLifecycleService(OpenClawDBService):
 
     @classmethod
     def with_computed_status(cls, agent: Agent) -> Agent:
+        from datetime import timedelta
+
         now = utcnow()
-        if agent.status in {"deleting", "updating"}:
+        if agent.status == "deleting":
+            return agent
+        if agent.status == "updating":
+            # Revert stuck "updating" agents to "offline" after 2 minutes.
+            # Inspired by abhi1693/openclaw-mission-control#184.
+            if agent.updated_at and now - agent.updated_at > timedelta(minutes=2):
+                agent.status = "offline"
             return agent
         if agent.last_seen_at is None:
             agent.status = "provisioning"
