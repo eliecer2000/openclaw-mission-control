@@ -481,11 +481,12 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     async with async_session_maker() as session:
         await _mark_agents_offline(session)
     # Launch periodic offline check loop
-    asyncio.create_task(_offline_check_loop())
+    offline_task = asyncio.create_task(_offline_check_loop())
     logger.info("app.lifecycle.started")
     try:
         yield
     finally:
+        offline_task.cancel()
         logger.info("app.lifecycle.stopped")
 
 
