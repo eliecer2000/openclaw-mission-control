@@ -37,12 +37,13 @@ ENV NEXT_PUBLIC_AUTH_MODE=${NEXT_PUBLIC_AUTH_MODE}
 RUN addgroup -S appgroup && adduser -S -G appgroup appuser \
   && chown appuser:appgroup /app
 
-COPY --from=builder --chown=appuser:appgroup /app/.next ./.next
+# Standalone output: Next.js bundles server + minimal node_modules into .next/standalone.
+COPY --from=builder --chown=appuser:appgroup /app/.next/standalone ./
+# Static assets and pre-rendered pages are not included in standalone output.
+COPY --from=builder --chown=appuser:appgroup /app/.next/static ./.next/static
 # `public/` is optional in Next.js apps; repo may not have it.
-# Avoid failing the build when the directory is absent.
+# Copy it when present so static files (favicon, images) are served correctly.
 COPY --from=builder --chown=appuser:appgroup /app/package.json ./package.json
-COPY --from=builder --chown=appuser:appgroup /app/node_modules ./node_modules
-COPY --from=builder --chown=appuser:appgroup /app/next.config.ts ./next.config.ts
 COPY --chown=appuser:appgroup docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
 

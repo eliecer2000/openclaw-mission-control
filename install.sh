@@ -862,6 +862,8 @@ main() {
     ensure_file_from_example "$REPO_ROOT/backend/.env" "$REPO_ROOT/backend/.env.example"
 
     upsert_env_value "$REPO_ROOT/.env" "DB_AUTO_MIGRATE" "true"
+    upsert_env_value "$REPO_ROOT/.env" "BASE_URL" "http://backend:8000"
+    upsert_env_value "$REPO_ROOT/backend/.env" "BASE_URL" "http://backend:8000"
 
     info "Starting production-like Docker stack..."
     docker_compose -f compose.yml --env-file .env up -d --build

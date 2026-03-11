@@ -9,6 +9,7 @@ const allowedDevOrigins = rawOrigins
   : ["localhost", "127.0.0.1"];
 
 const nextConfig: NextConfig = {
+  output: "standalone",
   allowedDevOrigins,
   images: {
     remotePatterns: [
