@@ -881,6 +881,11 @@ Auth:
 - AUTH_MODE=local
 - LOCAL_AUTH_TOKEN=$local_auth_token
 
+Gateway connectivity:
+  When adding a gateway running on this host, use
+  ws://host.docker.internal:<port> instead of ws://localhost:<port>.
+  The backend runs inside Docker and cannot reach the host via localhost.
+
 Stop stack:
   docker compose -f compose.yml --env-file .env down
 SUMMARY
